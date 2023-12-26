@@ -1,0 +1,30 @@
+name: Check latest Cloudflared version
+
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: check
+  cancel-in-progress: true
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Get the latest version of Cloudflared
+        run: |
+          curl -s https://api.github.com/repos/cloudflare/cloudflared/releases | jq -r '[.[] | select(.prerelease == false)][0] | .tag_name' > version
+          echo "CLOUDFLARED_VERSION=$(cat version)" >> $GITHUB_ENV
+
+      - name: Add & Commit
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: 'Version updated to: ${{ env.CLOUDFLARED_VERSION }}'
+          default_author: github_actions

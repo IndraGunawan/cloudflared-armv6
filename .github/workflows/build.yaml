@@ -1,0 +1,113 @@
+name: Build Cloudflared
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'version'
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    env:
+      GOOS: linux
+      GOARCH: arm
+      GOARM: 6
+      CGO_ENABLED: 0
+      CC: arm-linux-gnueabi-gcc
+      BUILD_ID: ${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export version to variable
+        shell: bash
+        run: |
+          if [ ! -f version ]; then
+            echo "version file not found."
+            exit 1
+          fi
+
+          echo "CLOUDFLARED_VERSION=$(cat version)" >> $GITHUB_ENV
+
+      - name: Checkout Cloudflared
+        uses: actions/checkout@v4
+        with:
+          repository: cloudflare/cloudflared
+          path: cloudflared
+          ref: ${{ env.CLOUDFLARED_VERSION }}
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cloudflared/go.mod'
+          cache-dependency-path: 'cloudflared/go.sum'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential gcc-arm-linux-gnueabi libdigest-sha-perl
+          gem install fpm
+
+      - name: Build
+        shell: bash
+        working-directory: cloudflared
+        run: |
+          ARTIFACT_DIR=built_artifacts/
+          mkdir -p $ARTIFACT_DIR
+
+          # rpm packages invert the - and _
+          RPMVERSION=$(echo $VERSION|sed -r 's/-/_/g')
+          make cloudflared-rpm
+          mv cloudflared-$RPMVERSION-1.arm.rpm $ARTIFACT_DIR/cloudflared.rpm
+
+          # deb packages
+          make cloudflared-deb
+          mv cloudflared\_$VERSION\_arm.deb $ARTIFACT_DIR/cloudflared.deb
+
+          # linux binary
+          mv cloudflared $ARTIFACT_DIR/cloudflared
+
+        env:
+          TARGET_ARCH: arm
+          TARGET_ARM: 6
+          VERSION: ${{ env.CLOUDFLARED_VERSION }}
+
+      - name: Calculate SHA256 checksum
+        working-directory: cloudflared/built_artifacts
+        shell: bash
+        run: |
+          cat << EOF >> .checksum.txt
+          SHA256 Checksums:
+
+          \`\`\`
+          $(for filename in cloudflared*; do shasum -a 256 $filename | awk '{print $2": "$1}' ; done)
+          \`\`\`
+          EOF
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ env.CLOUDFLARED_VERSION }}-${{ env.BUILD_ID }}
+          draft: false
+          prerelease: false
+          tag: ${{ env.CLOUDFLARED_VERSION }}-${{ env.BUILD_ID }}
+          makeLatest: true
+          bodyFile: 'cloudflared/built_artifacts/.checksum.txt'
+          artifacts: 'cloudflared/built_artifacts/cloudflared*'
