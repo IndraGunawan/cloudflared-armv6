@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     env:
       GOOS: linux
       GOARCH: arm
@@ -92,12 +94,39 @@ jobs:
         working-directory: cloudflared/built_artifacts
         shell: bash
         run: |
-          cat << EOF >> .checksum.txt
+          shasum -a 256 -b cloudflared* > .checksum.txt
+          cat .checksum.txt
+      
+      - name: Generate artifact attestation
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-checksums: cloudflared/built_artifacts/.checksum.txt
+
+      - name: Create release notes
+        working-directory: cloudflared/built_artifacts
+        shell: bash
+        run: |
+          cat << EOF > .release-notes.md
+          Verify the release artifacts are built from source by Github by using the [Github CLI] to [verify] the integrity and provenance using its associated cryptographically [signed attestations]
+
+          $(for filename in cloudflared*; do
+          cat << ATTEST_EOF
+          \`\`\`sh
+          gh attestation verify $filename -R $GITHUB_REPOSITORY
+          \`\`\`
+          ATTEST_EOF
+          done)
+
           SHA256 Checksums:
 
           \`\`\`
-          $(for filename in cloudflared*; do shasum -a 256 $filename | awk '{print $2": "$1}' ; done)
+          $(cat .checksum.txt)
           \`\`\`
+
+          [Github CLI]: https://cli.github.com/
+          [verify]: https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+          [signed attestations]: ${{ steps.attest.outputs.attestation-url }}
           EOF
 
       - name: Release
@@ -109,5 +138,5 @@ jobs:
           prerelease: false
           tag: ${{ env.CLOUDFLARED_VERSION }}-${{ env.BUILD_ID }}
           makeLatest: true
-          bodyFile: 'cloudflared/built_artifacts/.checksum.txt'
+          bodyFile: 'cloudflared/built_artifacts/.release-notes.md'
           artifacts: 'cloudflared/built_artifacts/cloudflared*'
