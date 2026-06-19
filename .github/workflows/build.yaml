@@ -29,7 +29,7 @@ jobs:
       BUILD_ID: ${{ github.run_number }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Export version to variable
         shell: bash
@@ -42,7 +42,7 @@ jobs:
           echo "CLOUDFLARED_VERSION=$(cat version)" >> $GITHUB_ENV
 
       - name: Checkout Cloudflared
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: cloudflare/cloudflared
           path: cloudflared
