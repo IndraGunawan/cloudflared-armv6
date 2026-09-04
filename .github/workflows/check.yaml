@@ -24,7 +24,7 @@ jobs:
           echo "CLOUDFLARED_VERSION=$(cat version)" >> $GITHUB_ENV
 
       - name: Add & Commit
-        uses: EndBug/add-and-commit@v10
+        uses: EndBug/add-and-commit@v11
         with:
           message: 'Version updated to: ${{ env.CLOUDFLARED_VERSION }}'
           default_author: github_actions
